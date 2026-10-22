@@ -46,11 +46,35 @@ BarWidget {
 
     for (var i = 0; i < values.length; i++) {
       var id = values[i].id
-      if (id > 0 && id <= 10 && ids.indexOf(id) === -1) ids.push(id)
+      if (id > 0 && ids.indexOf(id) === -1) ids.push(id)
     }
 
     ids.sort(function(left, right) { return left - right })
     return ids
+  }
+
+  // Workspace cells live in a ListModel that is patched rather than replaced,
+  // so cells (and their tooltips) survive other workspaces coming and going.
+  ListModel { id: workspaceModel }
+
+  function syncWorkspaces() {
+    var ids = root.workspaceIds()
+
+    for (var i = workspaceModel.count - 1; i >= 0; i--) {
+      if (ids.indexOf(workspaceModel.get(i).wsId) === -1) workspaceModel.remove(i)
+    }
+
+    // What's left is an in-order subset of ids, so fill the gaps.
+    for (var j = 0; j < ids.length; j++) {
+      if (j >= workspaceModel.count || workspaceModel.get(j).wsId !== ids[j]) workspaceModel.insert(j, { wsId: ids[j] })
+    }
+  }
+
+  Component.onCompleted: root.syncWorkspaces()
+
+  Connections {
+    target: Hyprland.workspaces
+    function onValuesChanged() { root.syncWorkspaces() }
   }
 
   function windowsOf(workspace) {
@@ -94,21 +118,30 @@ BarWidget {
   }
 
   // Terminal windows running Claude Code, keyed by address (no 0x). They are
-  // plain terminals to Hyprland, so look for a `claude` process under each one.
+  // plain terminals to Hyprland, so claude-scan.sh looks for a `claude`
+  // process under each window.
   property var claudeWindows: ({})
+  property string claudeKey: ""
+  property bool claudeScanPending: false
+
+  // Only these get the mascot, so apps that launch `claude` themselves
+  // (Claude Desktop, editors) keep their own icon.
+  readonly property var terminalClasses: ["foot", "footclient", "Alacritty", "kitty", "com.mitchellh.ghostty", "org.wezfurlong.wezterm"]
 
   function addressKey(address) {
     return String(address).replace(/^0x/, "")
   }
 
   function iconFor(toplevel) {
-    if (root.claudeWindows[root.addressKey(toplevel.address)] === true) return Qt.resolvedUrl("claude-code.svg")
-    return root.iconSource(root.windowClass(toplevel))
+    var cls = root.windowClass(toplevel)
+    if (root.terminalClasses.indexOf(cls) !== -1 && root.claudeWindows[root.addressKey(toplevel.address)] === true)
+      return Qt.resolvedUrl("claude-code.svg")
+    return root.iconSource(cls)
   }
 
   Process {
     id: claudeScan
-    command: ["sh", "-c", "{ ps -eo pid=,ppid=,comm= | awk '{par[$1]=$2; if ($3==\"claude\") c[$1]=1} END {for (p in c) {q=par[p]; for (i=0; i<10 && q>1; i++) {print \"A \" q; q=par[q]}}}'; hyprctl clients; } | awk '$1==\"A\" {a[$2]=1; next} $1==\"Window\" {w=$2} $1==\"pid:\" && ($2 in a) {print w}'"]
+    command: ["sh", decodeURIComponent(String(Qt.resolvedUrl("claude-scan.sh")).replace(/^file:\/\//, ""))]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -118,15 +151,29 @@ BarWidget {
           var address = lines[i].trim()
           if (address) next[address] = true
         }
+
+        // Reassigning re-evaluates every icon, so only do it on a real change.
+        var key = Object.keys(next).sort().join(",")
+        if (key === root.claudeKey) return
+        root.claudeKey = key
         root.claudeWindows = next
       }
+    }
+    onExited: {
+      if (!root.claudeScanPending) return
+      root.claudeScanPending = false
+      claudeScan.running = true
     }
   }
 
   Timer {
     id: claudeScanDelay
     interval: 300
-    onTriggered: if (!claudeScan.running) claudeScan.running = true
+    onTriggered: {
+      // A scan already running may predate the change; queue one more.
+      if (claudeScan.running) root.claudeScanPending = true
+      else claudeScan.running = true
+    }
   }
 
   // Rescan when windows open or close, and every few seconds for Claude Code
@@ -221,17 +268,17 @@ BarWidget {
     rowSpacing: root.vertical ? Style.space(2) : 0
 
     Repeater {
-      model: root.workspaceIds()
+      model: workspaceModel
 
       GridLayout {
         id: cell
 
-        required property int modelData
+        required property int wsId
 
-        readonly property var workspace: root.workspaceById(modelData)
-        readonly property var windows: root.windowsOf(workspace)
-        readonly property bool occupied: windows.length > 0
-        readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === modelData
+        readonly property var workspace: root.workspaceById(wsId)
+        readonly property bool occupied: root.windowsOf(workspace).length > 0
+        readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === wsId
+        readonly property string label: wsId === 10 ? "0" : String(wsId)
 
         flow: root.vertical ? GridLayout.TopToBottom : GridLayout.LeftToRight
         columnSpacing: 0
@@ -239,19 +286,22 @@ BarWidget {
 
         WidgetButton {
           bar: root.bar
-          text: cell.modelData === 10 ? "0" : String(cell.modelData)
+          text: cell.label
           // Current workspace: theme accent colour.
           foreground: cell.focused ? Commons.Color.accent : (root.bar ? root.bar.barForeground : Commons.Color.foreground)
           opacity: cell.occupied || cell.focused ? 1 : 0.5
           horizontalMargin: 6
           verticalPadding: 6
-          fixedWidth: root.vertical ? root.barSize : Style.space(20)
+          // Two-digit numbers (11+) size to their text instead.
+          fixedWidth: root.vertical ? root.barSize : (cell.label.length > 1 ? -1 : Style.space(20))
           fixedHeight: root.barSize
-          onPressed: function() { root.focusWorkspace(cell.modelData) }
+          onPressed: function() { root.focusWorkspace(cell.wsId) }
         }
 
+        // The live window model, so opening or closing one window only adds or
+        // removes that icon.
         Repeater {
-          model: cell.windows
+          model: cell.workspace ? cell.workspace.toplevels : []
           WindowIcon {}
         }
       }
@@ -276,7 +326,7 @@ BarWidget {
       }
 
       Repeater {
-        model: root.windowsOf(root.scratchpad)
+        model: root.scratchpad ? root.scratchpad.toplevels : []
         WindowIcon { inScratchpad: true }
       }
     }
