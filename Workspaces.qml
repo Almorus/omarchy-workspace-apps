@@ -146,16 +146,33 @@ BarWidget {
     return source
   }
 
-  // Terminal windows running Claude Code, keyed by address (no 0x). They are
-  // plain terminals to Hyprland, so claude-scan.sh looks for a `claude`
-  // process under each window.
+  // Terminal windows running Claude Code, keyed by address (no 0x), mapped to
+  // the session's state: idle, working or input. They are plain terminals to
+  // Hyprland, so claude-scan.sh looks for a `claude` process under each window
+  // and reads the state claude-status.sh records from Claude Code's hooks.
   property var claudeWindows: ({})
   property string claudeKey: ""
   property bool claudeScanPending: false
+  property bool claudeAnimating: false
 
   // Only these get the mascot, so apps that launch `claude` themselves
   // (Claude Desktop, editors) keep their own icon.
   readonly property var terminalClasses: ["foot", "footclient", "Alacritty", "kitty", "com.mitchellh.ghostty", "org.wezfurlong.wezterm"]
+
+  // Two-frame animations: typing while working, waving when it needs input.
+  readonly property var claudeFrames: ({
+    "working": [Qt.resolvedUrl("claude-code-typing-1.svg"), Qt.resolvedUrl("claude-code-typing-2.svg")],
+    "input": [Qt.resolvedUrl("claude-code-wave-1.svg"), Qt.resolvedUrl("claude-code-wave-2.svg")]
+  })
+  property int claudeFrame: 0
+
+  // Only runs while some session is working or waiting.
+  Timer {
+    interval: 350
+    repeat: true
+    running: root.claudeAnimating
+    onTriggered: root.claudeFrame = 1 - root.claudeFrame
+  }
 
   function addressKey(address) {
     return String(address).replace(/^0x/, "")
@@ -163,9 +180,10 @@ BarWidget {
 
   function iconFor(toplevel) {
     var cls = root.windowClass(toplevel)
-    if (root.terminalClasses.indexOf(cls) !== -1 && root.claudeWindows[root.addressKey(toplevel.address)] === true)
-      return Qt.resolvedUrl("claude-code.svg")
-    return root.iconSource(cls)
+    var state = root.claudeWindows[root.addressKey(toplevel.address)]
+    if (root.terminalClasses.indexOf(cls) === -1 || state === undefined) return root.iconSource(cls)
+    var frames = root.claudeFrames[state]
+    return frames ? frames[root.claudeFrame] : Qt.resolvedUrl("claude-code.svg")
   }
 
   Process {
@@ -175,17 +193,24 @@ BarWidget {
       waitForEnd: true
       onStreamFinished: {
         var next = ({})
+        var animating = false
         var lines = text.split("\n")
         for (var i = 0; i < lines.length; i++) {
-          var address = lines[i].trim()
-          if (address) next[address] = true
+          var fields = lines[i].trim().split(" ")
+          if (!fields[0]) continue
+          next[fields[0]] = fields[1] || "idle"
+          if (next[fields[0]] !== "idle") animating = true
         }
 
+        root.claudeStatusReady = true
+
         // Reassigning re-evaluates every icon, so only do it on a real change.
-        var key = Object.keys(next).sort().join(",")
+        var key = Object.keys(next).sort().map(function(address) { return address + "=" + next[address] }).join(",")
         if (key === root.claudeKey) return
         root.claudeKey = key
         root.claudeWindows = next
+        root.claudeAnimating = animating
+        if (!animating) root.claudeFrame = 0
       }
     }
     onExited: {
@@ -218,6 +243,19 @@ BarWidget {
   Connections {
     target: Hyprland.toplevels
     function onValuesChanged() { claudeScanDelay.restart() }
+  }
+
+  // claude-status.sh rewrites `changed` whenever a session's state changes,
+  // so the icon follows within a moment. The scan creates the file, so it's
+  // only watched after the first scan.
+  readonly property string claudeStatusDir: Quickshell.env("XDG_RUNTIME_DIR") ? Quickshell.env("XDG_RUNTIME_DIR") + "/claude-status" : ""
+  property bool claudeStatusReady: false
+
+  FileView {
+    path: root.claudeStatusReady && root.claudeStatusDir ? root.claudeStatusDir + "/changed" : ""
+    watchChanges: true
+    printErrors: false
+    onFileChanged: claudeScanDelay.restart()
   }
 
   function focusWorkspace(id) {
