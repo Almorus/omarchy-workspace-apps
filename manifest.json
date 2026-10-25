@@ -2,11 +2,11 @@
   "schemaVersion": 1,
   "id": "almorus.workspace-apps",
   "name": "Workspace Apps",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "author": "Almorus",
   "license": "MIT",
   "homepage": "https://github.com/Almorus/omarchy-workspace-apps",
-  "description": "Workspace numbers with the icons of the apps open on each workspace, plus a scratchpad group and a Claude Code icon.",
+  "description": "Workspace numbers with the icons of the apps open on each workspace, plus a scratchpad group and a Claude Code mascot that types while Claude works and waves when it needs you.",
   "kinds": [
     "bar-widget"
   ],
