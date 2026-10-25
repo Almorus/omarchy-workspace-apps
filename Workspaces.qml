@@ -99,7 +99,36 @@ BarWidget {
       }
     }
 
-    try { return DesktopEntries.heuristicLookup(cls) } catch (e) { return null }
+    var entry = null
+    try { entry = DesktopEntries.heuristicLookup(cls) } catch (e) {}
+    return entry || root.fallbackEntry(cls)
+  }
+
+  // Some apps report a class their desktop entry doesn't list, e.g. Hermes is
+  // com.nousresearch.hermes but its entry is hermes-desktop. Compare the class
+  // and its last dotted part with each entry's id, StartupWMClass, binary and
+  // name. Only whole, case-insensitive matches count, strongest field first.
+  function fallbackEntry(cls) {
+    if (!cls) return null
+    var keys = [cls.toLowerCase()]
+    var tail = cls.split(".").pop().toLowerCase()
+    if (tail && keys.indexOf(tail) === -1) keys.push(tail)
+
+    var values = DesktopEntries.applications.values || []
+    var fields = [
+      function(e) { return String(e.id || "").replace(/\.desktop$/, "").split(".").pop() },
+      function(e) { return String(e.startupClass || "") },
+      function(e) { return String((e.command && e.command[0]) || "").split("/").pop() },
+      function(e) { return String(e.name || "") }
+    ]
+    for (var f = 0; f < fields.length; f++) {
+      for (var i = 0; i < values.length; i++) {
+        var value = fields[f](values[i]).toLowerCase()
+        if (value && keys.indexOf(value) !== -1) return values[i]
+      }
+    }
+
+    return null
   }
 
   function iconSource(cls) {

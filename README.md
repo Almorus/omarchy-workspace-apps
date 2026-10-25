@@ -36,7 +36,7 @@ If the bar doesn't pick up a change, run `omarchy restart shell`.
 ## How it works
 
 - Workspaces and their windows come from Quickshell's Hyprland integration, the same data the stock widget uses.
-- Icons are looked up from your installed desktop entries and icon theme. A window without a matching desktop entry gets a generic app icon.
+- Icons are looked up from your installed desktop entries and icon theme. Apps whose window class doesn't match their desktop entry (Hermes reports `com.nousresearch.hermes`, but its entry is `hermes-desktop`) are matched by the last part of the class against each entry's id, `StartupWMClass`, program and name, exactly and ignoring case. A window without a matching desktop entry gets a generic app icon.
 - Claude Code runs inside an ordinary terminal, so `claude-scan.sh` checks which windows have a `claude` process under them. For Claude Code inside tmux, it finds the terminal attached to that tmux session. It rechecks when windows open or close, and every 5 seconds. That's one `ps` and one `hyprctl clients` call, plus two quick `tmux` calls if tmux is installed.
 - Only terminal windows (foot, Alacritty, kitty, Ghostty, WezTerm) get the mascot, so apps that start Claude Code themselves, such as Claude Desktop or an editor, keep their own icon.
 - Workspaces are updated in place, so switching workspaces or opening a window doesn't redraw the whole widget or close an open tooltip.
