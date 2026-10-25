@@ -1,12 +1,13 @@
 #!/bin/sh
 # Claude Code hook: records what this session is doing for the bar widget.
 # Usage: claude-status.sh working|input|idle, with the hook's JSON on stdin.
-# Writes "<state> <transcript>" to $XDG_RUNTIME_DIR/claude-status/<claude pid>
+# Writes "<state> <transcript>" to $XDG_RUNTIME_DIR/agent-status/claude-<pid>
 # (idle removes it) and bumps the `changed` file so the widget rescans.
 # It never prints or fails, so it can't get in Claude Code's way.
 state=$1
-[ -n "${XDG_RUNTIME_DIR:-}" ] || exit 0
-dir=$XDG_RUNTIME_DIR/claude-status
+run=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+[ -d "$run" ] || exit 0
+dir=$run/agent-status
 
 # The claude process this hook runs under, a few parents up at most.
 pid=$PPID
@@ -17,7 +18,7 @@ while [ "$i" -lt 8 ] && [ "$(cat "/proc/$pid/comm" 2>/dev/null)" != claude ]; do
   i=$((i + 1))
 done
 [ "$(cat "/proc/$pid/comm" 2>/dev/null)" = claude ] || exit 0
-file=$dir/$pid
+file=$dir/claude-$pid
 
 case $state in
   working|input)
@@ -32,5 +33,5 @@ case $state in
     rm -f "$file"
     ;;
 esac
-printf '%s %s\n' "$pid" "$state" 2>/dev/null > "$dir/changed"
+printf 'claude-%s %s\n' "$pid" "$state" 2>/dev/null > "$dir/changed"
 exit 0

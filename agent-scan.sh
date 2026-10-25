@@ -1,10 +1,14 @@
 #!/bin/sh
-# Print "<address> <state>" (address without 0x) for every window with a
-# `claude` process under it. Claude Code inside tmux counts for the terminals
-# attached to that tmux session. The state is idle, working or input, as
-# recorded by claude-status.sh from Claude Code's hooks; without the hooks every
-# session is idle. Workspaces.qml decides which of these windows are terminals.
-dir=${XDG_RUNTIME_DIR:-}/claude-status
+# Report what the agents in your windows are doing:
+#   window <address> <state>  every window with a `claude` process under it
+#                             (address without 0x)
+#   app hermes <state>        Hermes as a whole
+# The state is idle, working or input, as recorded by claude-status.sh and
+# hermes-status.sh from the agents' hooks; without hooks everything is idle.
+# Claude Code inside tmux counts for the terminals attached to that tmux
+# session. Workspaces.qml decides which of these windows are terminals.
+run=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+dir=$run/agent-status
 
 # Pressing Esc in Claude Code runs no hook. If the transcript was written after
 # the state and its last message is that interrupt, the session is idle.
@@ -17,13 +21,29 @@ interrupted() {
 }
 
 # The widget watches `changed`, which has to exist before anything is written.
-if [ -n "${XDG_RUNTIME_DIR:-}" ] && mkdir -p "$dir" 2>/dev/null; then
+if [ -d "$run" ] && mkdir -p "$dir" 2>/dev/null; then
   [ -e "$dir/changed" ] || : > "$dir/changed"
 fi
 
+# Hermes runs its agents in a background gateway rather than under its window,
+# so it gets one state: the most urgent of any running Hermes process.
+hermes=idle
+for f in "$dir"/hermes-*; do
+  pid=${f##*/hermes-}
+  case $pid in ''|*[!0-9]*) continue ;; esac
+  # Left behind by a Hermes that crashed or was stopped mid-turn.
+  if ! tr '\0' ' ' 2>/dev/null < "/proc/$pid/cmdline" | grep -q hermes; then rm -f "$f"; continue; fi
+  read -r state < "$f" || continue
+  case $state in
+    input) hermes=input ;;
+    working) [ "$hermes" = input ] || hermes=working ;;
+  esac
+done
+echo "app hermes $hermes"
+
 {
-  for f in "$dir"/*; do
-    pid=${f##*/}
+  for f in "$dir"/claude-*; do
+    pid=${f##*/claude-}
     case $pid in ''|*[!0-9]*) continue ;; esac
     # Left behind by a session that crashed or was killed.
     if [ "$(cat "/proc/$pid/comm" 2>/dev/null)" != claude ]; then rm -f "$f"; continue; fi
@@ -60,5 +80,5 @@ fi
     done = 1
   }
   $1 == "Window" { w = $2 }
-  $1 == "pid:" && ($2 in anc) { print w, name[anc[$2]] }
+  $1 == "pid:" && ($2 in anc) { print "window", w, name[anc[$2]] }
 '

@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Hyprland
@@ -148,11 +149,11 @@ BarWidget {
 
   // Terminal windows running Claude Code, keyed by address (no 0x), mapped to
   // the session's state: idle, working or input. They are plain terminals to
-  // Hyprland, so claude-scan.sh looks for a `claude` process under each window
+  // Hyprland, so agent-scan.sh looks for a `claude` process under each window
   // and reads the state claude-status.sh records from Claude Code's hooks.
   property var claudeWindows: ({})
   property string claudeKey: ""
-  property bool claudeScanPending: false
+  property bool agentScanPending: false
   property bool claudeAnimating: false
 
   // Only these get the mascot, so apps that launch `claude` themselves
@@ -170,25 +171,69 @@ BarWidget {
   Timer {
     interval: 350
     repeat: true
-    running: root.claudeAnimating
+    running: root.agentsAnimating
     onTriggered: root.claudeFrame = 1 - root.claudeFrame
+  }
+
+  // Hermes as a whole (idle, working or input), from hermes-status.sh via its
+  // hooks. Its icon turns orange and breathes while it works, and red while it
+  // waits on you. The breathing steps through a few levels instead of animating
+  // smoothly, so the bar isn't redrawn every frame.
+  property string hermesState: "idle"
+  readonly property color agentWorkingColor: "#D77757"
+  readonly property color agentInputColor: "#E5484D"
+  readonly property var hermesPulseLevels: [0.45, 0.6, 0.75, 0.9, 1, 0.9, 0.75, 0.6]
+  property int hermesPulseStep: 0
+
+  Timer {
+    interval: 150
+    repeat: true
+    running: root.hermesState === "working"
+    onTriggered: root.hermesPulseStep = (root.hermesPulseStep + 1) % root.hermesPulseLevels.length
+  }
+
+  function isHermes(cls) {
+    return cls.split(".").pop().toLowerCase() === "hermes"
   }
 
   function addressKey(address) {
     return String(address).replace(/^0x/, "")
   }
 
+  // While it works, Claude Code starts the terminal title with a spinner (◐◑◒◓).
+  // That covers sessions whose hooks can't be traced to their window, such as
+  // background sessions shown through `claude`'s client, or no hooks at all.
+  function titleBusy(toplevel) {
+    return /^[◐-◓]/.test(String(toplevel.title || ""))
+  }
+
+  function claudeState(toplevel) {
+    var state = root.claudeWindows[root.addressKey(toplevel.address)]
+    if (state === "idle" && root.titleBusy(toplevel)) return "working"
+    return state
+  }
+
+  // Something to animate: a hooked session, or a spinner in a Claude terminal's title.
+  readonly property bool agentsAnimating: {
+    if (root.claudeAnimating) return true
+    var values = Hyprland.toplevels.values
+    for (var i = 0; i < values.length; i++) {
+      if (root.claudeWindows[root.addressKey(values[i].address)] !== undefined && root.titleBusy(values[i])) return true
+    }
+    return false
+  }
+
   function iconFor(toplevel) {
     var cls = root.windowClass(toplevel)
-    var state = root.claudeWindows[root.addressKey(toplevel.address)]
+    var state = root.claudeState(toplevel)
     if (root.terminalClasses.indexOf(cls) === -1 || state === undefined) return root.iconSource(cls)
     var frames = root.claudeFrames[state]
     return frames ? frames[root.claudeFrame] : Qt.resolvedUrl("claude-code.svg")
   }
 
   Process {
-    id: claudeScan
-    command: ["sh", decodeURIComponent(String(Qt.resolvedUrl("claude-scan.sh")).replace(/^file:\/\//, ""))]
+    id: agentScan
+    command: ["sh", decodeURIComponent(String(Qt.resolvedUrl("agent-scan.sh")).replace(/^file:\/\//, ""))]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -196,13 +241,17 @@ BarWidget {
         var animating = false
         var lines = text.split("\n")
         for (var i = 0; i < lines.length; i++) {
+          // "window <address> <state>" or "app hermes <state>"
           var fields = lines[i].trim().split(" ")
-          if (!fields[0]) continue
-          next[fields[0]] = fields[1] || "idle"
-          if (next[fields[0]] !== "idle") animating = true
+          if (fields[0] === "app" && fields[1] === "hermes") {
+            if (root.hermesState !== fields[2]) root.hermesState = fields[2] || "idle"
+          } else if (fields[0] === "window" && fields[1]) {
+            next[fields[1]] = fields[2] || "idle"
+            if (next[fields[1]] !== "idle") animating = true
+          }
         }
 
-        root.claudeStatusReady = true
+        root.agentStatusReady = true
 
         // Reassigning re-evaluates every icon, so only do it on a real change.
         var key = Object.keys(next).sort().map(function(address) { return address + "=" + next[address] }).join(",")
@@ -214,19 +263,19 @@ BarWidget {
       }
     }
     onExited: {
-      if (!root.claudeScanPending) return
-      root.claudeScanPending = false
-      claudeScan.running = true
+      if (!root.agentScanPending) return
+      root.agentScanPending = false
+      agentScan.running = true
     }
   }
 
   Timer {
-    id: claudeScanDelay
+    id: agentScanDelay
     interval: 300
     onTriggered: {
       // A scan already running may predate the change; queue one more.
-      if (claudeScan.running) root.claudeScanPending = true
-      else claudeScan.running = true
+      if (agentScan.running) root.agentScanPending = true
+      else agentScan.running = true
     }
   }
 
@@ -237,25 +286,25 @@ BarWidget {
     running: true
     repeat: true
     triggeredOnStart: true
-    onTriggered: claudeScanDelay.restart()
+    onTriggered: agentScanDelay.restart()
   }
 
   Connections {
     target: Hyprland.toplevels
-    function onValuesChanged() { claudeScanDelay.restart() }
+    function onValuesChanged() { agentScanDelay.restart() }
   }
 
-  // claude-status.sh rewrites `changed` whenever a session's state changes,
-  // so the icon follows within a moment. The scan creates the file, so it's
-  // only watched after the first scan.
-  readonly property string claudeStatusDir: Quickshell.env("XDG_RUNTIME_DIR") ? Quickshell.env("XDG_RUNTIME_DIR") + "/claude-status" : ""
-  property bool claudeStatusReady: false
+  // claude-status.sh and hermes-status.sh rewrite `changed` whenever a state
+  // changes, so the icons follow within a moment. The scan creates the file,
+  // so it's only watched after the first scan.
+  readonly property string agentStatusDir: Quickshell.env("XDG_RUNTIME_DIR") ? Quickshell.env("XDG_RUNTIME_DIR") + "/agent-status" : ""
+  property bool agentStatusReady: false
 
   FileView {
-    path: root.claudeStatusReady && root.claudeStatusDir ? root.claudeStatusDir + "/changed" : ""
+    path: root.agentStatusReady && root.agentStatusDir ? root.agentStatusDir + "/changed" : ""
     watchChanges: true
     printErrors: false
-    onFileChanged: claudeScanDelay.restart()
+    onFileChanged: agentScanDelay.restart()
   }
 
   function focusWorkspace(id) {
@@ -298,6 +347,7 @@ BarWidget {
 
     required property var modelData
     property bool inScratchpad: false
+    readonly property string agentState: root.isHermes(root.windowClass(modelData)) ? root.hermesState : "idle"
 
     implicitWidth: root.vertical ? root.barSize : root.iconSize + Style.spaceReal(1)
     implicitHeight: root.vertical ? root.iconSize + Style.spaceReal(1) : root.barSize
@@ -311,6 +361,12 @@ BarWidget {
       sourceSize.width: Math.round(root.iconSize * Screen.devicePixelRatio)
       sourceSize.height: Math.round(root.iconSize * Screen.devicePixelRatio)
       source: root.iconFor(windowIcon.modelData)
+
+      layer.enabled: windowIcon.agentState !== "idle"
+      layer.effect: MultiEffect {
+        colorization: windowIcon.agentState === "input" ? 1 : root.hermesPulseLevels[root.hermesPulseStep]
+        colorizationColor: windowIcon.agentState === "input" ? root.agentInputColor : root.agentWorkingColor
+      }
     }
 
     MouseArea {
