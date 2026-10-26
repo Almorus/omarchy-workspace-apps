@@ -6,12 +6,16 @@ An [Omarchy](https://omarchy.org/) bar widget that shows which apps are open on 
 
 - **App icons per workspace.** Each workspace number is followed by small icons of the windows open on it. Omarchy web apps get the icon of their launcher.
 - **Scratchpad group.** Windows parked with `Super + S` show up under an **S** at the end, so they're never out of sight. The group hides itself when the scratchpad is empty.
-- **Current workspace in your theme's accent colour.** The number stays readable instead of being replaced by a glyph, and the colour follows your theme.
+- **Current workspace in your theme's accent colour.** The number stays readable and bold instead of being replaced by a glyph, and an accent line under the workspace slides over when you switch. The focused window's icon sits on a soft background. The colour follows your theme.
+- **Workspaces read as groups.** A number sits close to its own icons and further from the workspace before it.
+- **Urgent windows get a red !** at the corner of their icon until you focus them.
+- **Hover panel.** Rest the pointer on a workspace to see a list of its windows with their titles and what's going on in each (an agent's status, or the program running in a terminal). Click a row to jump to that window.
+- **Terminal programs get their icon.** A terminal running nvim, btop or another program with its own icon shows that icon instead of the terminal's.
 - **Claude Code gets its mascot.** Terminals running [Claude Code](https://claude.com/claude-code) show the little Claude Code guy instead of a terminal icon, also when Claude Code runs inside tmux. With the [optional hooks](#claude-code-status) it also shows what Claude Code is doing: it types on a keyboard while working, waves when it needs your input, and stands still when it's idle.
-- **Hermes too.** With [optional hooks](#hermes-status), the [Hermes](https://github.com/NousResearch/hermes-agent) icon turns orange and pulses while Hermes works, and turns red while it waits for you.
+- **Hermes too.** Terminals running the [Hermes](https://github.com/NousResearch/hermes-agent) CLI show the Hermes icon. With [optional hooks](#hermes-status), the icon turns orange and pulses while Hermes works, and turns red while it waits for you, both for the desktop app and for each terminal.
 - **Workspaces past 10.** Workspaces 1–5 are always shown, and any other workspace in use appears too, including 11 and up.
 
-Click a workspace number to switch to it, or click an app icon to jump straight to that window. For scratchpad icons it opens the scratchpad first. Hover an icon to see the window title, and click **S** to toggle the scratchpad.
+Click a workspace number to switch to it, or click an app icon to jump straight to that window. For scratchpad icons it opens the scratchpad first. Hover a workspace to see its windows, and click **S** to toggle the scratchpad.
 
 ## Install
 
@@ -91,7 +95,7 @@ hooks:
       timeout: 5
 ```
 
-Hermes only runs a new hook after you've approved it, and it asks only in a terminal: run `hermes chat` once and accept the six hooks (or add them to `~/.hermes/shell-hooks-allowlist.json`). `hermes hooks list` shows whether they're approved. New Hermes chats pick them up; restart the Hermes gateway if it was already running.
+Hermes only runs a new hook after you've approved it, and it asks only in a terminal: run `hermes chat` once and accept the six hooks (or add them to `~/.hermes/shell-hooks-allowlist.json`). `hermes hooks list` shows whether they're approved. New Hermes chats pick them up; restart the Hermes gateway if it was already running. The same hooks cover the desktop app and `hermes` in a terminal.
 
 Each hook checks that the script is there first, so removing the plugin leaves them doing nothing.
 
@@ -99,10 +103,10 @@ Each hook checks that the script is there first, so removing the plugin leaves t
 
 - Workspaces and their windows come from Quickshell's Hyprland integration, the same data the stock widget uses.
 - Icons are looked up from your installed desktop entries and icon theme. Apps whose window class doesn't match their desktop entry (Hermes reports `com.nousresearch.hermes`, but its entry is `hermes-desktop`) are matched by the last part of the class against each entry's id, `StartupWMClass`, program and name, exactly and ignoring case. A window without a matching desktop entry gets a generic app icon.
-- Claude Code runs inside an ordinary terminal, so `agent-scan.sh` checks which windows have a `claude` process under them. For Claude Code inside tmux, it finds the terminal attached to that tmux session. It rechecks when windows open or close, and every 5 seconds. That's one `ps` and one `hyprctl clients` call, plus two quick `tmux` calls if tmux is installed.
-- Only terminal windows (foot, Alacritty, kitty, Ghostty, WezTerm, and terminals Omarchy opens with an `org.omarchy.*` app id, such as `omarchy-agent` windows) get the mascot, so apps that start Claude Code themselves, such as Claude Desktop or an editor, keep their own icon.
+- Claude Code and the Hermes CLI run inside an ordinary terminal, so `agent-scan.sh` checks which windows have a `claude` or `hermes` process under them. For an agent inside tmux, it finds the terminal attached to that tmux session. The same scan reads the foreground program of each terminal for its icon. It rechecks when windows open or close, and every 5 seconds. That's one `ps` and one `hyprctl clients` call, plus two quick `tmux` calls if tmux is installed.
+- Only terminal windows (foot, Alacritty, kitty, Ghostty, WezTerm, and terminals Omarchy opens with an `org.omarchy.*` app id, such as `omarchy-agent` windows) get the mascot, the Hermes icon or their program's icon, so apps that start Claude Code themselves, such as Claude Desktop or an editor, keep their own icon. If one terminal has both Claude Code and Hermes, the mascot wins.
 - The hooks run `claude-status.sh` or `hermes-status.sh`, which write one line per Claude Code session or Hermes process to `$XDG_RUNTIME_DIR/agent-status/` (in memory, gone after a reboot), and only when the state actually changes. They never print anything and always exit successfully, so they can't block Claude Code or Hermes. The widget watches that folder and rescans within about half a second. Files left by sessions that crashed are removed on the next scan.
-- Hermes runs its agents in a background gateway rather than under its window, so the widget shows one state for Hermes as a whole: the most urgent of any running Hermes process. The tint uses Qt's `MultiEffect`, and the pulse steps through a few levels about 7 times a second instead of redrawing every frame.
+- The Hermes desktop app runs its agents in a background gateway rather than under its window, so its icon shows one state for every Hermes process that isn't in a window: the most urgent one. A `hermes` CLI in a terminal runs its hooks itself, so that terminal gets its own state. The tint uses Qt's `MultiEffect`, and the pulse steps through a few levels about 7 times a second instead of redrawing every frame.
 - Pressing Esc in Claude Code runs no hook, so the scan also checks the end of a working session's transcript: if it was interrupted, the mascot goes back to idle within 5 seconds.
 - The animation timers only run while something is working or waiting.
 - Workspaces are updated in place, so switching workspaces or opening a window doesn't redraw the whole widget or close an open tooltip.
