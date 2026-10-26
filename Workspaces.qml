@@ -156,8 +156,10 @@ BarWidget {
   property bool agentScanPending: false
   property bool claudeAnimating: false
 
-  // Only these get the mascot, so apps that launch `claude` themselves
-  // (Claude Desktop, editors) keep their own icon.
+  // Only terminals get the mascot, so apps that launch `claude` themselves
+  // (Claude Desktop, editors) keep their own icon. Omarchy opens its terminals
+  // with org.omarchy.* app ids (org.omarchy.agent for omarchy-agent), so those
+  // count too.
   readonly property var terminalClasses: ["foot", "footclient", "Alacritty", "kitty", "com.mitchellh.ghostty", "org.wezfurlong.wezterm"]
 
   // Two-frame animations: typing while working, waving when it needs input.
@@ -226,7 +228,7 @@ BarWidget {
   function iconFor(toplevel) {
     var cls = root.windowClass(toplevel)
     var state = root.claudeState(toplevel)
-    if (root.terminalClasses.indexOf(cls) === -1 || state === undefined) return root.iconSource(cls)
+    if ((root.terminalClasses.indexOf(cls) === -1 && cls.indexOf("org.omarchy.") !== 0) || state === undefined) return root.iconSource(cls)
     var frames = root.claudeFrames[state]
     return frames ? frames[root.claudeFrame] : Qt.resolvedUrl("claude-code.svg")
   }

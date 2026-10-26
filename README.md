@@ -67,7 +67,7 @@ Without the hooks, the mascot still types while Claude Code works, because Claud
 
 ## Hermes status
 
-The Hermes icon can show what Hermes is doing: orange and gently pulsing while it works, red while it waits for you (an approval, a question or a sudo password), and normal when it's idle. Hermes reports that through its shell hooks, so add these to `~/.hermes/config.yaml`:
+The Hermes icon can show what Hermes is doing: orange and gently pulsing while it works, red while it waits for you (an approval, a question or a password prompt), and normal when it's idle. Hermes reports that through its shell hooks, so add these to `~/.hermes/config.yaml`:
 
 ```yaml
 hooks:
@@ -100,7 +100,7 @@ Each hook checks that the script is there first, so removing the plugin leaves t
 - Workspaces and their windows come from Quickshell's Hyprland integration, the same data the stock widget uses.
 - Icons are looked up from your installed desktop entries and icon theme. Apps whose window class doesn't match their desktop entry (Hermes reports `com.nousresearch.hermes`, but its entry is `hermes-desktop`) are matched by the last part of the class against each entry's id, `StartupWMClass`, program and name, exactly and ignoring case. A window without a matching desktop entry gets a generic app icon.
 - Claude Code runs inside an ordinary terminal, so `agent-scan.sh` checks which windows have a `claude` process under them. For Claude Code inside tmux, it finds the terminal attached to that tmux session. It rechecks when windows open or close, and every 5 seconds. That's one `ps` and one `hyprctl clients` call, plus two quick `tmux` calls if tmux is installed.
-- Only terminal windows (foot, Alacritty, kitty, Ghostty, WezTerm) get the mascot, so apps that start Claude Code themselves, such as Claude Desktop or an editor, keep their own icon.
+- Only terminal windows (foot, Alacritty, kitty, Ghostty, WezTerm, and terminals Omarchy opens with an `org.omarchy.*` app id, such as `omarchy-agent` windows) get the mascot, so apps that start Claude Code themselves, such as Claude Desktop or an editor, keep their own icon.
 - The hooks run `claude-status.sh` or `hermes-status.sh`, which write one line per Claude Code session or Hermes process to `$XDG_RUNTIME_DIR/agent-status/` (in memory, gone after a reboot), and only when the state actually changes. They never print anything and always exit successfully, so they can't block Claude Code or Hermes. The widget watches that folder and rescans within about half a second. Files left by sessions that crashed are removed on the next scan.
 - Hermes runs its agents in a background gateway rather than under its window, so the widget shows one state for Hermes as a whole: the most urgent of any running Hermes process. The tint uses Qt's `MultiEffect`, and the pulse steps through a few levels about 7 times a second instead of redrawing every frame.
 - Pressing Esc in Claude Code runs no hook, so the scan also checks the end of a working session's transcript: if it was interrupted, the mascot goes back to idle within 5 seconds.
