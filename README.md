@@ -40,7 +40,7 @@ If the bar doesn't pick up a change, run `omarchy restart shell`.
 
 ## Claude Code status
 
-![The Claude Code mascot idle, typing while Claude Code works, and waving when it needs you](claude-status.gif)
+![Workspace Apps in the bar, and the Claude Code mascot idle, typing while Claude Code works, and waving when it needs you](preview.gif)
 
 The mascot can show what each Claude Code session is doing, so you can see from any workspace which session is busy and which one is waiting for you. Claude Code reports that through [hooks](https://docs.claude.com/en/docs/claude-code/hooks), so add these to the `hooks` section of `~/.claude/settings.json` (create the section if it's missing):
 
