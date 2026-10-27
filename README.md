@@ -6,7 +6,7 @@ An [Omarchy](https://omarchy.org/) bar widget that shows which apps are open on 
 
 - **App icons per workspace.** Each workspace number is followed by small icons of the windows open on it. Omarchy web apps get the icon of their launcher.
 - **Scratchpad group.** Windows parked with `Super + S` show up under an **S** at the end, so they're never out of sight. The group hides itself when the scratchpad is empty.
-- **Current workspace in your theme's accent colour.** The number stays readable and bold instead of being replaced by a glyph, and an accent line under the workspace slides over when you switch. The focused window's icon sits on a soft background. The colour follows your theme.
+- **Current workspace in your theme's accent colour.** The number stays readable and bold instead of being replaced by a glyph, and an accent line under the workspace slides over when you switch. The colour follows your theme.
 - **Workspaces read as groups.** A number sits close to its own icons and further from the workspace before it.
 - **Urgent windows get a red !** at the corner of their icon until you focus them.
 - **Hover panel.** Rest the pointer on a workspace to see a list of its windows with their titles and what's going on in each (an agent's status, or the program running in a terminal). Click a row to jump to that window.

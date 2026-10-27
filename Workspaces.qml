@@ -601,21 +601,6 @@ BarWidget {
     // Keeps the urgent mark above the next icon.
     z: windowIcon.modelData.urgent ? 1 : 0
 
-    // The focused window's icon sits on a soft rounded background.
-    Rectangle {
-      readonly property color ink: root.bar ? root.bar.barForeground : Commons.Color.foreground
-
-      anchors.centerIn: parent
-      width: root.iconSize + Style.spaceReal(3)
-      height: width
-      radius: Math.round(width / 4)
-      color: Qt.rgba(ink.r, ink.g, ink.b, 0.15)
-      opacity: windowIcon.modelData.activated ? 1 : 0
-      visible: opacity > 0
-
-      Behavior on opacity { NumberAnimation { duration: 140; easing.type: Easing.OutCubic } }
-    }
-
     AppIcon {
       anchors.centerIn: parent
       toplevel: windowIcon.modelData
