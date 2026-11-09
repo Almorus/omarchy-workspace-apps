@@ -46,17 +46,81 @@ BarWidget {
     return null
   }
 
+  // Omarchy gives every monitor workspaces 1-10 of its own, which Hyprland
+  // numbers in a block of ten per monitor: 1-10, 11-20, and so on (see
+  // default/hypr/monitor-workspaces.lua). Each bar shows its own monitor's
+  // block, labelled 1-10, as the built-in omarchy.workspaces widget does.
+  readonly property int slots: 10
+
+  readonly property var monitor: {
+    var window = root.QsWindow.window
+    var screen = window ? window.screen : null
+    return screen ? Hyprland.monitorFor(screen) : Hyprland.focusedMonitor
+  }
+  readonly property string monitorName: root.monitor ? root.monitor.name : ""
+
+  // Connector -> block, from the state file Omarchy's Hyprland config keeps.
+  property var blocks: ({})
+
+  function readBlocks(text) {
+    var next = {}
+    var lines = String(text || "").split("\n")
+    for (var i = 0; i < lines.length; i++) {
+      var fields = lines[i].split("\t")
+      if (fields.length >= 3 && fields[1] !== "") next[fields[1]] = parseInt(fields[0], 10)
+    }
+    root.blocks = next
+  }
+
+  FileView {
+    path: (Quickshell.env("XDG_STATE_HOME") || Quickshell.env("HOME") + "/.local/state") + "/omarchy/monitor-workspaces"
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: root.readBlocks(text())
+    onLoadFailed: root.readBlocks("")
+  }
+
+  function blockOf(id) {
+    return Math.floor((id - 1) / root.slots)
+  }
+
+  function slotOf(id) {
+    return (id - 1) % root.slots + 1
+  }
+
+  // Until Hyprland has written the file, the workspace a monitor shows is in
+  // its own block.
+  readonly property int block: {
+    var block = root.blocks[root.monitorName]
+    if (block !== undefined) return block
+    var active = root.monitor && root.monitor.activeWorkspace ? root.monitor.activeWorkspace.id : -1
+    return active > 0 ? root.blockOf(active) : 0
+  }
+
+  onBlockChanged: root.syncWorkspaces()
+
+  // The first five of the monitor's own block, any others in it that exist,
+  // then guests (workspaces of an unplugged monitor now living on this one).
   function workspaceIds() {
-    var ids = [1, 2, 3, 4, 5]
+    var base = root.block * root.slots
+    var ids = [base + 1, base + 2, base + 3, base + 4, base + 5]
+    var guests = []
     var values = Hyprland.workspaces.values
 
     for (var i = 0; i < values.length; i++) {
       var id = values[i].id
-      if (id > 0 && ids.indexOf(id) === -1) ids.push(id)
+      if (id <= 0) continue
+      if (root.blockOf(id) === root.block) {
+        if (ids.indexOf(id) === -1) ids.push(id)
+      } else if (values[i].monitor && values[i].monitor.name === root.monitorName) {
+        guests.push(id)
+      }
     }
 
     ids.sort(function(left, right) { return left - right })
-    return ids
+    guests.sort(function(left, right) { return left - right })
+    return ids.concat(guests)
   }
 
   // Workspace cells live in a ListModel that is patched rather than replaced,
@@ -638,7 +702,9 @@ BarWidget {
         readonly property var workspace: root.workspaceById(wsId)
         readonly property bool occupied: root.windowsOf(workspace).length > 0
         readonly property bool focused: Hyprland.focusedWorkspace !== null && Hyprland.focusedWorkspace.id === wsId
-        readonly property string label: wsId === 10 ? "0" : String(wsId)
+        readonly property string label: root.blockOf(wsId) === root.block
+          ? (root.slotOf(wsId) === root.slots ? "0" : String(root.slotOf(wsId)))
+          : String(wsId)
         readonly property real leadPad: cell.index === 0 ? Style.spaceReal(6) : root.labelLeadPad
         // The focus line runs from the number to the last icon.
         readonly property real lineStart: cell.leadPad - Style.spaceReal(1)
